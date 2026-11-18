@@ -4,6 +4,18 @@ Dan's personal Tension Board 2 tool: browse climb lists, see each climb on the b
 
 Live page: https://danbeallclimbingcoach.github.io/board-lab/
 
+## What it does
+
+- **Search** the TB2 12×12 catalogue (Mirror or Spray) by angle, grade range, minimum ascents and
+  stars, with an option to skip classics (benchmarks or 500+ ascents). Save results as lists on the
+  phone.
+- **Hold-type search** (low crimp, slopers & pinches) uses Dan's hold tags. They ship encrypted
+  (`tags.enc.json`, AES-GCM, key from a passphrase via PBKDF2-SHA256) and only open on a phone where
+  the passphrase has been entered.
+- **Light** any climb on the board over Bluetooth, and see it on the board picture.
+
+Climb data (`catalogue-*.json`) is a snapshot taken when the page was built.
+
 ## Credits and sources
 
 - Bluetooth protocol (framing, LED encoding, UUIDs) follows Boardsesh's
@@ -21,5 +33,5 @@ are used only to describe compatibility.
 ## How it's built
 
 `index.html` is generated (climb lists, hold positions and the LED map are baked in) by a build
-script kept with Dan's private project files; `encoder.js` is the readable copy of the encoder
-it embeds. To change the lists, rebuild and push — don't edit `index.html` by hand.
+script kept with Dan's private project files; `encoder.js` and `search.js` are readable copies of
+the code it embeds. To change the lists, rebuild and push — don't edit `index.html` by hand.
