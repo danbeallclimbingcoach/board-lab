@@ -1,9 +1,8 @@
-# TB2 Light
+# Board Lab
 
-A small web page that lights climbs on a Tension Board 2 (12×12, Mirror or Spray) over
-Bluetooth. Open it in **Bluefy** on iPhone, or Chrome on Android or a laptop.
+Dan's personal Tension Board 2 tool: browse climb lists, see each climb on the board, and light it (12×12, Mirror or Spray) over Bluetooth. Open it in **Bluefy** on iPhone, or Chrome on Android or a laptop.
 
-Live page: https://danbeallclimbingcoach.github.io/tb2-light/
+Live page: https://danbeallclimbingcoach.github.io/board-lab/
 
 ## Credits and sources
 
