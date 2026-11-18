@@ -16,3 +16,9 @@ Live page: https://danbeallclimbingcoach.github.io/tb2-light/
 
 Not affiliated with Tension Climbing, Aurora Climbing or Boardsesh. Board and product names
 are used only to describe compatibility.
+
+## How it's built
+
+`index.html` is generated (climb lists, hold positions and the LED map are baked in) by a build
+script kept with Dan's private project files; `encoder.js` is the readable copy of the encoder
+it embeds. To change the lists, rebuild and push — don't edit `index.html` by hand.
