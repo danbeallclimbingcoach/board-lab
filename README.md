@@ -13,6 +13,8 @@ Live page: https://danbeallclimbingcoach.github.io/tb2-light/
   (`packages/board-constants`, Apache-2.0).
 - Climb names, setters, holds and stats are from the public Tension Board catalogue, via
   Boardsesh's nightly board snapshots.
+- Board pictures (`tb2-*-12x12.webp`) are Tension Climbing's hold renders, as used by the Tension
+  app and published in Boardsesh's repository; they remain Tension's artwork.
 
 Not affiliated with Tension Climbing, Aurora Climbing or Boardsesh. Board and product names
 are used only to describe compatibility.
