@@ -20,6 +20,7 @@
   --accent:#4fbf9f; --accent-ink:#0c1512; --warn:#f0a85a; --err:#ff8a80;
   --start:#33dd33; --hand:#6f8bff; --finish:#ff4d4d; --foot:#ff55ff; --boardbg:#d8d2c5; color-scheme:dark}}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 var(--body)}
 body{padding:env(safe-area-inset-top,0) max(14px,env(safe-area-inset-right,0px)) calc(150px + env(safe-area-inset-bottom,0px)) max(14px,env(safe-area-inset-left,0px))}
 header{display:flex;align-items:center;gap:10px;padding:12px 0 8px;flex-wrap:wrap}
@@ -43,6 +44,18 @@ details.search summary{font-weight:600;padding:11px 0;cursor:pointer}
 .grid label.check{flex-direction:row;align-items:center;gap:8px;color:var(--fg);font-size:14px}
 .grid select,.grid input{width:100%}
 .grid label.check input{width:auto;flex:none;margin:0}
+.grid .wide{grid-column:1 / -1}
+.holds{border-top:1px solid var(--line);padding-top:8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.chip{font:600 14px var(--body);border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:7px 12px;cursor:pointer}
+.chip[data-s="want"]{background:color-mix(in srgb,var(--start) 22%,var(--surface));border-color:var(--start)}
+.chip[data-s="avoid"]{background:color-mix(in srgb,var(--finish) 18%,var(--surface));border-color:var(--finish)}
+.chip:disabled{opacity:.45}
+.preset{font:13px var(--body);border:1px dashed var(--line);background:none;color:var(--fg);border-radius:8px;padding:6px 9px;cursor:pointer}
+.preset:disabled{opacity:.45}
+.pickbar{display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:13px;padding:4px 4px 8px}
+.pickbar span{min-height:2.8em;flex:1}  /* fixed height: the board mustn't move between taps */
+.boardpic.picking svg{cursor:crosshair}
 .tags{grid-column:1 / -1;border-top:1px solid var(--line);padding-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .tags input{flex:1;min-width:140px}
 .board{background:var(--surface);border:1px solid var(--line);border-radius:12px;margin:8px 0;padding:6px}
@@ -96,17 +109,36 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
     <label>Grade to<select id="sHi"></select></label>
     <label>Min ascents<input type="number" id="sAsc" min="0" step="1" value="5" inputmode="numeric"></label>
     <label>Min stars (of 3)<select id="sStars"><option value="0">Any</option><option value="1.5">1.5</option><option value="2" selected>2.0</option><option value="2.5">2.5</option><option value="2.7">2.7</option><option value="2.8">2.8</option></select></label>
-    <label class="wide">Hold focus
-      <select id="sMode">
-        <option value="any">Any holds · rank by stars</option>
-        <option value="low-crimp">Low crimp · fewest crimps first</option>
-        <option value="sloper-pinch">Slopers &amp; pinches · crimps OK</option>
-      </select>
-    </label>
-    <label id="shareWrap" class="wide" hidden>Min share of sloper/pinch hand holds
-      <select id="sShare"><option value="0.4">40%</option><option value="0.5">50%</option><option value="0.6" selected>60%</option><option value="0.75">75%</option><option value="1">100%</option></select>
-    </label>
     <label class="check wide"><input type="checkbox" id="sNoClassics"> No classics (no benchmarks at any angle, under 500 ascents)</label>
+    <div class="wide holds">
+      <div class="small">Hold types · tap: OK → <b>✓ Want</b> → <b>✕ Avoid</b> (hand holds only)</div>
+      <div class="chips" id="presets">
+        <button type="button" class="preset" data-preset="low-crimp">Low crimp</button>
+        <button type="button" class="preset" data-preset="sloper-pinch">Slopers &amp; pinches</button>
+        <button type="button" class="preset" data-preset="big">Big holds</button>
+        <button type="button" class="preset" data-preset="clear">Clear</button>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="small" id="chipNote" hidden>Unlock your hold tags (bottom of this box) to use these.</div>
+    </div>
+    <label id="shareWrap">Want at least
+      <select id="sShare"><option value="0">any share</option><option value="0.25">25%</option><option value="0.4">40%</option><option value="0.5">50%</option><option value="0.6" selected>60%</option><option value="0.75">75%</option><option value="1">100%</option></select>
+    </label>
+    <label id="maxWrap">Avoid at most
+      <select id="sMax"><option value="0">0 holds</option><option value="1" selected>1 hold</option><option value="2">2 holds</option><option value="3">3 holds</option><option value="-1">no limit (fewest first)</option></select>
+    </label>
+    <label class="check wide" id="strictWrap"><input type="checkbox" id="sStrict"> Strict: count every hold with an avoided tag (off: e.g. a crimp that's also a pinch doesn't count)</label>
+    <label class="wide">Sort
+      <select id="sSort"><option value="best">Best match · fewest avoided, most wanted</option><option value="stars">Stars</option><option value="ascents">Most ascents</option></select>
+    </label>
+    <div class="wide holds">
+      <div class="small">Specific holds (this layout)</div>
+      <div class="row">
+        <button type="button" class="btn small" id="pickBtn">Pick on board</button>
+        <span class="small" id="pickSum" style="flex:1">None picked</span>
+        <button type="button" class="btn small" id="pickClear" hidden>Clear</button>
+      </div>
+    </div>
     <button class="btn primary wide" id="searchBtn" type="submit" style="grid-column:1 / -1">Search</button>
     <div class="tags" id="tagsBox">
       <span class="small" id="tagsState">Hold tags locked</span>
@@ -124,8 +156,9 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
 </div>
 <div class="warn" id="layoutWarn" hidden>This list is for the other layout. Lighting it on your board would show the wrong holds, so the Light button is off.</div>
 
-<div class="board">
-  <div class="boardpic"><img id="boardImg" src="tb2-mirror-12x12.webp" alt="Tension Board 2 Mirror, 12 by 12"><svg id="map" viewBox="0 0 1080 1144" role="img" aria-label="Holds of the selected climb"></svg></div>
+<div class="board" id="boardBox">
+  <div class="pickbar" id="pickBar" hidden><span id="pickMsg">Tap a hold: 1× must use (green), 2× must avoid (red), 3× off.</span><button class="btn small primary" id="pickDone">Done</button></div>
+  <div class="boardpic" id="boardPic"><img id="boardImg" src="tb2-mirror-12x12.webp" alt="Tension Board 2 Mirror, 12 by 12"><svg id="map" viewBox="0 0 1080 1144" role="img" aria-label="Holds of the selected climb"></svg></div>
   <div class="legend">
     <span><i style="--c:var(--start)"></i>Start</span><span><i style="--c:var(--hand)"></i>Hand</span>
     <span><i style="--c:var(--finish)"></i>Finish</span><span><i style="--c:var(--foot)"></i>Foot</span>
@@ -208,11 +241,17 @@ if (typeof module !== "undefined") module.exports = AURORA;
 
 </script>
 <script>
-// Board Lab climb search: the same rules as tools/board_lab/find_climbs.py, run in the browser.
+// Board Lab climb search, run in the browser. The presets "Low crimp" and "Slopers & pinches"
+// give the same results as tools/board_lab/find_climbs.py --mode low-crimp / sloper-pinch.
 // Catalogue rows: [uuid, name, setter, frames, [[angle, difficulty, ascents, quality(1-5), benchmark], ...]]
 const BLSEARCH = (() => {
   const HAND = new Set([5, 6, 7]);
-  const GENTLE = ["jug", "ledge", "sloper", "pinch"];
+  const TAGS = ["jug", "ledge", "crimp", "sloper", "pinch", "pocket"];
+  // Non-strict avoid: a hold with an avoided tag is only "mixed" if it also has one of these
+  // (not avoided). Pocket doesn't count: a crimpy pocket is still a crimp.
+  const SOFTENERS = ["jug", "ledge", "crimp", "sloper", "pinch"];
+  // What lists without their own focus (built-in lists) show
+  const DEFAULT_FOCUS = { want: ["sloper", "pinch"], avoid: ["crimp"], strict: false };
 
   function frames(fr) { return [...(fr || "").matchAll(/p(\d+)r(\d+)/g)].map(m => [m[1], +m[2]]); }
 
@@ -235,27 +274,47 @@ const BLSEARCH = (() => {
              ascents: s[2], stars: s[3] * 3 / 5, benchmark: !!s[4] };
   }
 
-  // Hand-hold tag counts; tagsByType null -> null
-  function holdCounts(row, typeOf, tagsByType) {
+  // Hand-hold counts for a focus {want, avoid, strict}; tagsByType null -> null.
+  // wanted: holds with any wanted tag. avoided: holds with an avoided tag (non-strict: and no
+  // other softening tag). mixed: avoided-tag holds that do have one (always 0 when strict).
+  function holdCounts(row, typeOf, tagsByType, focus) {
     if (!tagsByType) return null;
-    let n = 0, pure = 0, mixed = 0, good = 0;
+    const f = focus || DEFAULT_FOCUS;
+    let hands = 0, wanted = 0, avoided = 0, mixed = 0;
     for (const [pid, role] of frames(row[3])) {
       if (!HAND.has(role)) continue;
       const t = typeOf[pid]; if (!t) continue;
       const l = tagsByType[t] || [];
-      n++;
-      const crimp = l.includes("crimp"), gentle = GENTLE.some(k => l.includes(k));
-      if (crimp && !gentle) pure++; else if (crimp) mixed++;
-      if (l.includes("sloper") || l.includes("pinch")) good++;
+      hands++;
+      if (f.want.some(k => l.includes(k))) wanted++;
+      if (f.avoid.some(k => l.includes(k))) {
+        const softened = !f.strict && l.some(k => SOFTENERS.includes(k) && !f.avoid.includes(k));
+        if (softened) mixed++; else avoided++;
+      }
     }
-    return { hands: n, pure, mixed, good };
+    return { hands, wanted, avoided, mixed };
   }
 
   const r1 = (x) => Math.round(x * 10) / 10;
+  const NONE = { hands: 0, wanted: 0, avoided: 0, mixed: 0 };
+  const k = (c) => c.counts || NONE;          // counts are null while tags are locked
+  const SORTS = {
+    // fewest avoided, most wanted, fewest mixed, then stars and ascents
+    best: (a, b) => k(a).avoided - k(b).avoided || b.share - a.share || k(a).mixed - k(b).mixed
+                    || b.stars - a.stars || b.ascents - a.ascents,
+    stars: (a, b) => r1(b.stars) - r1(a.stars) || b.share - a.share || k(a).avoided - k(b).avoided || b.ascents - a.ascents,
+    ascents: (a, b) => b.ascents - a.ascents || b.stars - a.stars,
+  };
 
-  // p: {angle, vlo, vhi, minAscents, minStars, noClassics, mode: any|low-crimp|sloper-pinch, minShare, top}
+  // p: {angle, vlo, vhi, minAscents, minStars, noClassics, top,
+  //     want: [tags], avoid: [tags], strict, minShare (0-1, of hand holds with a wanted tag),
+  //     maxAvoid (null = no limit), sort: best|stars|ascents,
+  //     withHolds / withoutHolds: placement ids the climb must / must not use (any role)}
   function search(cat, grades, typeOf, tagsByType, p) {
-    if (p.mode !== "any" && !tagsByType) throw new Error("Unlock your hold tags to search by hold type.");
+    const f = { want: p.want || [], avoid: p.avoid || [], strict: !!p.strict };
+    const byTags = f.want.length > 0 || f.avoid.length > 0;
+    if (byTags && !tagsByType) throw new Error("Unlock your hold tags to search by hold type.");
+    const withH = p.withHolds || [], withoutH = p.withoutHolds || [];
     const [lo, hi] = gradeRange(grades, p.vlo, p.vhi);
     const out = [];
     for (const row of cat) {
@@ -266,20 +325,23 @@ const BLSEARCH = (() => {
         const total = row[4].reduce((a, s) => a + s[2], 0), bm = row[4].some(s => s[4]);
         if (bm || total >= 500) continue;
       }
-      const h = holdCounts(row, typeOf, tagsByType);
-      if (h && !h.hands && p.mode !== "any") continue;
-      const share = h && h.hands ? h.good / h.hands : 0;
-      if (p.mode === "sloper-pinch" && share < p.minShare) continue;
+      if (withH.length || withoutH.length) {
+        const used = new Set(frames(row[3]).map(x => x[0]));
+        if (!withH.every(h => used.has(h)) || withoutH.some(h => used.has(h))) continue;
+      }
+      // counts for the search focus; without one, the default focus (for display only)
+      const h = holdCounts(row, typeOf, tagsByType, byTags ? f : DEFAULT_FOCUS);
+      if (byTags && !h.hands) continue;
+      const share = byTags && f.want.length ? h.wanted / h.hands : 0;
+      if (f.want.length && share < (p.minShare || 0)) continue;
+      if (f.avoid.length && p.maxAvoid != null && h.avoided > p.maxAvoid) continue;
       out.push(Object.assign(c, { counts: h, share }));
     }
-    if (p.mode === "low-crimp")
-      out.sort((a, b) => a.counts.pure - b.counts.pure || b.share - a.share || a.counts.mixed - b.counts.mixed || b.stars - a.stars || b.ascents - a.ascents);
-    else
-      out.sort((a, b) => r1(b.stars) - r1(a.stars) || b.share - a.share || b.ascents - a.ascents);
+    out.sort(SORTS[p.sort] || SORTS.best);
     return out.slice(0, p.top);
   }
 
-  return { search, at, frames, gradeName, holdCounts };
+  return { search, at, frames, gradeName, holdCounts, TAGS, DEFAULT_FOCUS };
 })();
 if (typeof module !== "undefined") module.exports = BLSEARCH;
 
@@ -315,7 +377,7 @@ function loadSaved(){
 }
 for (const s of loadSaved()) LISTS.push(Object.assign({kind:"saved", climbs:null}, s));
 function persistSaved(){
-  store.set("bl.saved", JSON.stringify(LISTS.filter(l=>l.kind==="saved").map(({id,title,board,angle,uuids})=>({id,title,board,angle,uuids}))));
+  store.set("bl.saved", JSON.stringify(LISTS.filter(l=>l.kind==="saved").map(({id,title,board,angle,uuids,focus})=>({id,title,board,angle,uuids,focus}))));
 }
 const curList = () => LISTS[listIdx];
 const curClimb = () => (curList() && curList().climbs && climbIdx>=0) ? curList().climbs[climbIdx] : null;
@@ -334,14 +396,14 @@ async function resolve(list){
   const idx = catIndex[list.board];
   list.climbs = list.uuids.map(u => idx.get(u)).filter(Boolean).map(row => {
     const c = BLSEARCH.at(row, list.angle, DATA.grades);
-    if (c) c.counts = BLSEARCH.holdCounts(row, DATA.types[list.board], tags && tags.types);
+    if (c) c.counts = BLSEARCH.holdCounts(row, DATA.types[list.board], tags && tags.types, list.focus);
     return c;
   }).filter(Boolean);
 }
 function refreshCounts(){
   for (const l of LISTS){ if (!l.climbs) continue;
     const idx = catIndex[l.board]; if (!idx) continue;
-    for (const c of l.climbs){ const row = idx.get(c.uuid); if (row) c.counts = BLSEARCH.holdCounts(row, DATA.types[l.board], tags && tags.types); }
+    for (const c of l.climbs){ const row = idx.get(c.uuid); if (row) c.counts = BLSEARCH.holdCounts(row, DATA.types[l.board], tags && tags.types, l.focus); }
   }
 }
 
@@ -353,10 +415,13 @@ function renderLists(){
   $("delBtn").textContent = "Delete";
   $("saveRow").hidden = !(curList() && curList().kind === "search" && curList().climbs && curList().climbs.length);
 }
-function meta(c){
+function meta(c, focus){
   let s = `${esc(c.setter)} · ${c.stars.toFixed(2)}★ · ${c.ascents} ascents`;
-  const h = c.counts;
-  if (h && h.hands) s += ` · ${h.good}/${h.hands} sloper/pinch · ${h.pure} crimp${h.pure===1?"":"s"}${h.mixed?` (+${h.mixed} mixed)`:""}`;
+  const h = c.counts, f = focus || BLSEARCH.DEFAULT_FOCUS;
+  if (h && h.hands){
+    if (f.want.length) s += ` · want ${h.wanted}/${h.hands} ${f.want.join("/")}`;
+    if (f.avoid.length) s += ` · avoid ${h.avoided} ${f.avoid.join("/")}${h.mixed?` (+${h.mixed} mixed)`:""}`;
+  }
   return s;
 }
 function renderList(){
@@ -366,7 +431,7 @@ function renderList(){
   if (!l.climbs.length){ $("list").innerHTML = `<div class="empty">No climbs match. Try a wider grade range, fewer ascents or lower stars.</div>`; }
   else $("list").innerHTML = l.climbs.map((c,i)=>`<button class="climb${litSet.has(l.id+":"+i)?" lit":""}" data-i="${i}" aria-current="${i===climbIdx}">
       <span class="n">${i+1}</span><span class="t">${esc(c.name)}${c.benchmark?" ✓":""}</span><span class="g">${c.grade}</span>
-      <span class="m">${meta(c)}</span></button>`).join("");
+      <span class="m">${meta(c, l.focus)}</span></button>`).join("");
   $("layoutWarn").hidden = layoutOk();
 }
 function renderCur(){
@@ -398,6 +463,7 @@ const BOARD_IMG = {mirror:["tb2-mirror-12x12.webp","Tension Board 2 Mirror, 12 b
 // board units -> picture pixels (1080 x 1144 render of the 12 x 12)
 const px = ([x,y]) => [(x+68)*1080/136, 1144 - y*1144/144];
 function drawMap(){
+  if (picking) return drawPicks();
   const b = curList() ? curList().board : $("layout").value, H = DATA.holds[b], svg = $("map"), img = $("boardImg");
   if (!img.src.endsWith(BOARD_IMG[b][0])){ img.src = BOARD_IMG[b][0]; img.alt = BOARD_IMG[b][1]; }
   const used = curClimb() ? parseFrames(curClimb().frames).filter(h=>H[h.pid]) : [];
@@ -437,9 +503,7 @@ async function unlock(pass, quiet){
 function renderTags(){
   $("tagsState").textContent = tags ? "Hold tags unlocked on this phone" : "Hold tags locked";
   $("pass").hidden = !!tags; $("unlockBtn").hidden = !!tags; $("forgetBtn").hidden = !tags;
-  for (const o of $("sMode").options) if (o.value !== "any") o.disabled = !tags;
-  if (!tags && $("sMode").value !== "any") $("sMode").value = "any";
-  $("shareWrap").hidden = $("sMode").value !== "sloper-pinch";
+  renderChips();
 }
 
 // ---------- search ----------
@@ -451,25 +515,115 @@ function fillSearchForm(){
   const last = (() => { try { return JSON.parse(store.get("bl.search")||"null"); } catch { return null; } })();
   if (last){
     $("sAngle").value = last.angle; $("sLo").value = last.vlo; $("sHi").value = last.vhi; $("sAsc").value = last.minAscents;
-    $("sStars").value = last.minStars; $("sMode").value = last.mode; $("sShare").value = last.minShare;
-    $("sNoClassics").checked = last.noClassics; $("sTop").value = last.top;
+    $("sStars").value = last.minStars; $("sNoClassics").checked = last.noClassics; $("sTop").value = last.top;
+    if (last.want){               // current format
+      chipState = {}; for (const t of last.want) chipState[t] = "want"; for (const t of last.avoid) chipState[t] = "avoid";
+      $("sShare").value = last.minShare; $("sMax").value = last.maxAvoid == null ? -1 : last.maxAvoid;
+      $("sStrict").checked = !!last.strict; $("sSort").value = last.sort || "best";
+    } else applyPreset(last.mode === "low-crimp" || last.mode === "sloper-pinch" ? last.mode : "clear");
   }
+}
+
+// ---------- hold-type chips: OK -> want -> avoid ----------
+let chipState = {};                     // tag -> "want" | "avoid" (absent = OK)
+const PRESETS = {
+  "low-crimp":    {want:["sloper","pinch"], avoid:["crimp"], share:0, max:1, strict:false, sort:"best"},
+  "sloper-pinch": {want:["sloper","pinch"], avoid:[], share:0.6, max:-1, strict:false, sort:"stars"},
+  "big":          {want:["jug","ledge"], avoid:["crimp"], share:0.5, max:1, strict:false, sort:"best"},
+  "clear":        {want:[], avoid:[], share:0, max:-1, strict:false, sort:"best"},
+};
+function applyPreset(name){
+  const p = PRESETS[name]; chipState = {};
+  for (const t of p.want) chipState[t] = "want"; for (const t of p.avoid) chipState[t] = "avoid";
+  $("sShare").value = p.share; $("sMax").value = p.max; $("sStrict").checked = p.strict; $("sSort").value = p.sort;
+  renderChips();
+}
+const chipsOf = (s) => BLSEARCH.TAGS.filter(t => chipState[t] === s);
+function renderChips(){
+  $("chips").innerHTML = BLSEARCH.TAGS.map(t => {
+    const s = chipState[t] || "ok";
+    return `<button type="button" class="chip" data-tag="${t}" data-s="${s}" aria-label="${t}: ${s}"${tags?"":" disabled"}>${s==="want"?"✓ ":s==="avoid"?"✕ ":""}${t}</button>`;
+  }).join("");
+  for (const b of $("presets").querySelectorAll("button")) b.disabled = !tags && b.dataset.preset !== "clear";
+  $("chipNote").hidden = !!tags;
+  $("shareWrap").hidden = !chipsOf("want").length;
+  $("maxWrap").hidden = $("strictWrap").hidden = !chipsOf("avoid").length;
+}
+
+// ---------- specific holds: tap on the board picture ----------
+let picking = false;
+const picks = (() => { try { return Object.assign({mirror:{}, spray:{}}, JSON.parse(store.get("bl.picks")||"{}")); } catch { return {mirror:{}, spray:{}}; } })();
+const pickedOf = (b, s) => Object.keys(picks[b]).filter(pid => picks[b][pid] === s);
+function renderPickSum(){
+  const b = $("layout").value, w = pickedOf(b, "with").length, wo = pickedOf(b, "without").length;
+  $("pickSum").textContent = w || wo ? [w && `${w} must use`, wo && `${wo} must avoid`].filter(Boolean).join(" · ") : "None picked";
+  $("pickClear").hidden = !(w || wo);
+}
+function holdLabel(b, pid){
+  const t = DATA.types[b][pid], l = tags && tags.types[t];
+  return `${t || "hold"}${l && l.length ? " · " + l.join(", ") : ""}`;
+}
+function drawPicks(){
+  const b = $("layout").value, H = DATA.holds[b], svg = $("map"), img = $("boardImg");
+  if (!img.src.endsWith(BOARD_IMG[b][0])){ img.src = BOARD_IMG[b][0]; img.alt = BOARD_IMG[b][1]; }
+  let dots = "", rings = "";
+  for (const pid in H){
+    const [cx, cy] = px(H[pid]), s = picks[b][pid];
+    if (!s){ dots += `<circle cx="${cx}" cy="${cy}" r="9" fill="#fff" fill-opacity=".75" stroke="#000" stroke-opacity=".5" stroke-width="2"/>`; continue; }
+    const c = s === "with" ? "var(--start)" : "var(--finish)";
+    rings += `<circle cx="${cx}" cy="${cy}" r="36" fill="none" stroke="#fff" stroke-width="12" stroke-opacity=".9"/>`
+           + `<circle cx="${cx}" cy="${cy}" r="36" fill="none" stroke="${c}" stroke-width="8"/>`;
+    if (s === "without") rings += `<path d="M${cx-25} ${cy-25}L${cx+25} ${cy+25}M${cx+25} ${cy-25}L${cx-25} ${cy+25}" stroke="${c}" stroke-width="7"/>`;
+  }
+  svg.innerHTML = dots + rings;
+}
+function setPicking(on){
+  picking = on;
+  $("pickBar").hidden = !on; $("boardPic").classList.toggle("picking", on);
+  $("pickMsg").textContent = "Tap a hold: 1× must use (green), 2× must avoid (red), 3× off.";
+  if (on){ $("searchBox").open = false; $("boardBox").scrollIntoView({block:"start"}); }
+  else { $("searchBox").open = true; $("searchBox").scrollIntoView({block:"start"}); }
+  renderPickSum(); drawMap();
+}
+function tapBoard(ev){
+  if (!picking) return;
+  const b = $("layout").value, H = DATA.holds[b], r = $("map").getBoundingClientRect();
+  const vx = (ev.clientX - r.left) / r.width * 1080, vy = (ev.clientY - r.top) / r.height * 1144;
+  let best = null, bd = 45 * 45;                        // nearest hold within ~1.5 grid steps
+  for (const pid in H){ const [cx, cy] = px(H[pid]), d = (cx-vx)**2 + (cy-vy)**2; if (d < bd){ bd = d; best = pid; } }
+  if (!best) return;
+  const next = {undefined:"with", with:"without", without:undefined}[picks[b][best]];
+  if (next) picks[b][best] = next; else delete picks[b][best];
+  store.set("bl.picks", JSON.stringify(picks));
+  $("pickMsg").textContent = `${holdLabel(b, best)} → ${next === "with" ? "must use" : next === "without" ? "must avoid" : "off"}`;
+  renderPickSum(); drawPicks();
+}
+function focusTitle(p){
+  const parts = [];
+  if (p.want.length) parts.push(p.want.join("+") + (p.minShare ? ` ≥${Math.round(p.minShare*100)}%` : ""));
+  if (p.avoid.length) parts.push((p.maxAvoid === 0 ? "no " : p.maxAvoid == null ? "fewest " : `≤${p.maxAvoid} `) + p.avoid.join("/"));
+  const w = p.withHolds.length, wo = p.withoutHolds.length;
+  if (w || wo) parts.push([w && `uses ${w} hold${w>1?"s":""}`, wo && `avoids ${wo} hold${wo>1?"s":""}`].filter(Boolean).join(", "));
+  return parts.length ? " · " + parts.join(", ") : "";
 }
 async function runSearch(ev){
   ev.preventDefault();
   const board = $("layout").value;
+  const max = +$("sMax").value;
   const p = {angle:+$("sAngle").value, vlo:$("sLo").value, vhi:$("sHi").value, minAscents:+$("sAsc").value||0,
-             minStars:+$("sStars").value, noClassics:$("sNoClassics").checked, mode:$("sMode").value,
-             minShare:+$("sShare").value, top:+$("sTop").value};
+             minStars:+$("sStars").value, noClassics:$("sNoClassics").checked, top:+$("sTop").value,
+             want:chipsOf("want"), avoid:chipsOf("avoid"), strict:$("sStrict").checked,
+             minShare:+$("sShare").value, maxAvoid: max < 0 ? null : max, sort:$("sSort").value,
+             withHolds:pickedOf(board, "with"), withoutHolds:pickedOf(board, "without")};
   if (+p.vhi.slice(1) < +p.vlo.slice(1)) [p.vlo, p.vhi] = [p.vhi, p.vlo];
-  store.set("bl.search", JSON.stringify(p));
+  store.set("bl.search", JSON.stringify(Object.assign({}, p, {withHolds:undefined, withoutHolds:undefined})));
   $("searchBtn").disabled = true; $("searchBtn").textContent = "Searching…";
   try {
     const cat = await catalogue(board);
     const res = BLSEARCH.search(cat, DATA.grades, DATA.types[board], tags && tags.types, p);
-    const modeName = {any:"", "low-crimp":" · low crimp", "sloper-pinch":" · sloper/pinch"}[p.mode];
-    const title = `${BOARD_NAME[board]} ${p.angle}° ${p.vlo}${p.vhi!==p.vlo?"–"+p.vhi:""}${modeName}${p.noClassics?" · no classics":""}`;
-    const list = {id:"search", kind:"search", title, board, angle:p.angle, uuids:res.map(c=>c.uuid), climbs:res};
+    const title = `${BOARD_NAME[board]} ${p.angle}° ${p.vlo}${p.vhi!==p.vlo?"–"+p.vhi:""}${focusTitle(p)}${p.noClassics?" · no classics":""}`;
+    const focus = p.want.length || p.avoid.length ? {want:p.want, avoid:p.avoid, strict:p.strict} : undefined;
+    const list = {id:"search", kind:"search", title, board, angle:p.angle, uuids:res.map(c=>c.uuid), climbs:res, focus};
     const at = LISTS.findIndex(l=>l.kind==="search");
     if (at >= 0) LISTS[at] = list; else LISTS.push(list);
     litSet.forEach(k => { if (k.startsWith("search:")) litSet.delete(k); });
@@ -484,7 +638,7 @@ async function runSearch(ev){
 function saveSearch(){
   const s = curList(); if (!s || s.kind !== "search") return;
   const title = $("saveName").value.trim() || s.title;
-  const saved = {id:"saved-"+Date.now(), kind:"saved", title, board:s.board, angle:s.angle, uuids:s.uuids.slice(), climbs:s.climbs.slice()};
+  const saved = {id:"saved-"+Date.now(), kind:"saved", title, board:s.board, angle:s.angle, uuids:s.uuids.slice(), climbs:s.climbs.slice(), focus:s.focus};
   LISTS.push(saved); persistSaved();
   showList(LISTS.indexOf(saved));
   setStatus(`Saved “${title}” on this phone.`, "ok");
@@ -576,9 +730,15 @@ $("prevBtn").onclick = ()=>selectClimb(climbIdx<0?0:climbIdx-1, true);
 $("nextBtn").onclick = ()=>selectClimb(climbIdx+1, true);
 $("list").addEventListener("click", e=>{ const b=e.target.closest(".climb"); if (b) selectClimb(+b.dataset.i, false); });
 $("listSel").onchange = ()=>showList(+$("listSel").value);
-$("layout").onchange = ()=>{ store.set("bl.layout",$("layout").value); renderList(); renderCur(); catalogue($("layout").value).catch(()=>{}); };
+$("layout").onchange = ()=>{ store.set("bl.layout",$("layout").value); renderList(); renderCur(); renderPickSum(); catalogue($("layout").value).catch(()=>{}); };
 $("searchForm").addEventListener("submit", runSearch);
-$("sMode").onchange = renderTags;
+$("chips").addEventListener("click", e=>{ const b=e.target.closest(".chip"); if (!b) return;
+  const t=b.dataset.tag; chipState[t] = {undefined:"want", want:"avoid", avoid:undefined}[chipState[t]]; if (!chipState[t]) delete chipState[t]; renderChips(); });
+$("presets").addEventListener("click", e=>{ const b=e.target.closest("[data-preset]"); if (b) applyPreset(b.dataset.preset); });
+$("pickBtn").onclick = ()=>setPicking(true);
+$("pickDone").onclick = ()=>setPicking(false);
+$("pickClear").onclick = ()=>{ picks[$("layout").value] = {}; store.set("bl.picks", JSON.stringify(picks)); renderPickSum(); drawMap(); };
+$("map").addEventListener("click", tapBoard);
 $("unlockBtn").onclick = async ()=>{ $("unlockBtn").disabled = true; $("tagsState").textContent = "Unlocking…"; await unlock($("pass").value, false); $("unlockBtn").disabled = false; $("pass").value = ""; };
 $("pass").addEventListener("keydown", e=>{ if (e.key === "Enter"){ e.preventDefault(); $("unlockBtn").click(); } });
 $("forgetBtn").onclick = ()=>{ tags = null; store.del("bl.pass"); refreshCounts(); renderTags(); renderList(); };
@@ -587,7 +747,7 @@ $("delBtn").onclick = deleteSaved;
 
 if (!navigator.bluetooth) $("noBle").hidden = false;
 const savedLayout = store.get("bl.layout") || store.get("layout"); if (savedLayout) $("layout").value = savedLayout;
-fillSearchForm(); renderTags();
+fillSearchForm(); renderTags(); renderPickSum();
 const lastId = store.get("bl.list");
 const startAt = Math.max(0, LISTS.findIndex(l => l.id === lastId && l.kind !== "search"));
 showList(startAt);
