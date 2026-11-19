@@ -63,29 +63,55 @@ const BLSEARCH = (() => {
     ascents: (a, b) => b.ascents - a.ascents || b.stars - a.stars,
   };
 
-  // p: {angle, vlo, vhi, minAscents, minStars, noClassics, top,
-  //     want: [tags], avoid: [tags], strict, minShare (0-1, of hand holds with a wanted tag),
-  //     maxAvoid (null = no limit), sort: best|stars|ascents,
-  //     withHolds / withoutHolds: placement ids the climb must / must not use (any role)}
+  // Shuffle: a random pick from everything that passes, better-rated climbs a little more likely
+  // (weighted sampling without replacement, weight = stars squared).
+  function shuffle(list, n, rand) {
+    const r = rand || Math.random;
+    return list.map(c => [Math.pow(r(), 1 / Math.max(0.05, c.stars * c.stars)), c])
+               .sort((a, b) => b[0] - a[0]).slice(0, n).map(x => x[1]);
+  }
+
+  // Grade / ascents / stars / classics / setter / matching / excluded: the filters every view shares
+  function base(row, grades, p, range) {
+    const c = at(row, p.angle, grades);
+    if (!c || c.diff < range[0] || c.diff >= range[1]) return null;
+    if (c.ascents < (p.minAscents || 0) || c.stars < (p.minStars || 0)) return null;
+    if (p.noClassics) {
+      const total = row[4].reduce((a, s) => a + s[2], 0), bm = row[4].some(s => s[4]);
+      if (bm || total >= 500) return null;
+    }
+    if (p.setter && row[2].toLowerCase() !== p.setter.toLowerCase()) return null;
+    if (p.match === "nomatch" && !row[5]) return null;
+    if (p.match === "match" && row[5]) return null;
+    if (p.exclude && p.exclude.has(row[0])) return null;
+    c.noMatch = !!row[5];
+    return c;
+  }
+
+  // Hold picks: each item is {pid} (that spot) or {type} (any placement of that hold type), any role.
+  function picksOk(row, typeOf, p) {
+    const use = p.mustUse || [], avoid = p.mustAvoid || [];
+    if (!use.length && !avoid.length) return true;
+    const pids = new Set(frames(row[3]).map(x => x[0])), types = new Set([...pids].map(pid => typeOf[pid]));
+    const hit = (it) => it.pid ? pids.has(it.pid) : types.has(it.type);
+    if (avoid.some(hit)) return false;
+    if (!use.length) return true;
+    return p.useMode === "any" ? use.some(hit) : use.every(hit);
+  }
+
+  // p: {angle, vlo, vhi, minAscents, minStars, noClassics, top, setter, match: any|nomatch|match,
+  //     exclude: Set of uuids, want: [tags], avoid: [tags], strict, minShare (0-1, of hand holds
+  //     with a wanted tag), maxAvoid (null = no limit), sort: best|stars|ascents|shuffle,
+  //     mustUse / mustAvoid: [{pid} | {type}], useMode: all|any}
   function search(cat, grades, typeOf, tagsByType, p) {
     const f = { want: p.want || [], avoid: p.avoid || [], strict: !!p.strict };
     const byTags = f.want.length > 0 || f.avoid.length > 0;
     if (byTags && !tagsByType) throw new Error("Unlock your hold tags to search by hold type.");
-    const withH = p.withHolds || [], withoutH = p.withoutHolds || [];
-    const [lo, hi] = gradeRange(grades, p.vlo, p.vhi);
+    const range = gradeRange(grades, p.vlo, p.vhi);
     const out = [];
     for (const row of cat) {
-      const c = at(row, p.angle, grades);
-      if (!c || c.diff < lo || c.diff >= hi) continue;
-      if (c.ascents < p.minAscents || c.stars < p.minStars) continue;
-      if (p.noClassics) {
-        const total = row[4].reduce((a, s) => a + s[2], 0), bm = row[4].some(s => s[4]);
-        if (bm || total >= 500) continue;
-      }
-      if (withH.length || withoutH.length) {
-        const used = new Set(frames(row[3]).map(x => x[0]));
-        if (!withH.every(h => used.has(h)) || withoutH.some(h => used.has(h))) continue;
-      }
+      const c = base(row, grades, p, range);
+      if (!c || !picksOk(row, typeOf, p)) continue;
       // counts for the search focus; without one, the default focus (for display only)
       const h = holdCounts(row, typeOf, tagsByType, byTags ? f : DEFAULT_FOCUS);
       if (byTags && !h.hands) continue;
@@ -94,10 +120,57 @@ const BLSEARCH = (() => {
       if (f.avoid.length && p.maxAvoid != null && h.avoided > p.maxAvoid) continue;
       out.push(Object.assign(c, { counts: h, share }));
     }
+    if (p.sort === "shuffle") return shuffle(out, p.top, p.rand);
     out.sort(SORTS[p.sort] || SORTS.best);
     return out.slice(0, p.top);
   }
 
-  return { search, at, frames, gradeName, holdCounts, TAGS, DEFAULT_FOCUS };
+  // Climbs like `row` at angle p.angle within p's grade range, hand holds (start/hand/finish) only:
+  // 60% position (for each hand hold, how close the other climb's nearest hand hold is, both ways;
+  // a hold one grid step away (4 units, ~10 cm) still scores 0.6) + 40% shared hold types
+  // (multiset Jaccard). Other filters as in search, except hold tags. pos: placement -> [x, y].
+  function similar(cat, grades, typeOf, pos, row, p) {
+    const hands = (r) => frames(r[3]).filter(([pid, role]) => HAND.has(role) && pos[pid]).map(([pid]) => pid);
+    const typeBag = (pids) => { const m = {}; for (const pid of pids) { const t = typeOf[pid]; if (t) m[t] = (m[t] || 0) + 1; } return m; };
+    const near = (from, to) => from.reduce((acc, a) => {
+      let d2 = Infinity; for (const b of to) { const dx = pos[a][0] - pos[b][0], dy = pos[a][1] - pos[b][1]; d2 = Math.min(d2, dx * dx + dy * dy); }
+      return acc + Math.exp(-d2 / 32);       // exp(-(4^2)/32) = 0.61
+    }, 0) / from.length;
+    const A = hands(row), TA = typeBag(A), SA = new Set(A), range = gradeRange(grades, p.vlo, p.vhi);
+    if (!A.length) return [];
+    const out = [];
+    for (const r of cat) {
+      if (r[0] === row[0]) continue;
+      const c = base(r, grades, p, range);
+      if (!c) continue;
+      const B = hands(r); if (!B.length) continue;
+      const TB = typeBag(B); let tmin = 0, tmax = 0;
+      for (const t of new Set([...Object.keys(TA), ...Object.keys(TB)])) { tmin += Math.min(TA[t] || 0, TB[t] || 0); tmax += Math.max(TA[t] || 0, TB[t] || 0); }
+      c.similarity = 0.6 * (near(A, B) + near(B, A)) / 2 + 0.4 * (tmax ? tmin / tmax : 0);
+      c.shared = B.filter(x => SA.has(x)).length;
+      out.push(c);
+    }
+    out.sort((a, b) => b.similarity - a.similarity || b.stars - a.stars);
+    return out.slice(0, p.top);
+  }
+
+  // Setters over the climbs that pass the shared filters (no hold filters):
+  // climbs, total ascents, rating = ascent-weighted mean stars. by: rating|repeats|climbs.
+  function setters(cat, grades, p, by, minClimbs) {
+    const range = gradeRange(grades, p.vlo, p.vhi), m = new Map();
+    for (const row of cat) {
+      const c = base(row, grades, Object.assign({}, p, { setter: "" }), range);
+      if (!c || !c.setter) continue;
+      const s = m.get(c.setter) || { setter: c.setter, climbs: 0, ascents: 0, starSum: 0 };
+      s.climbs++; s.ascents += c.ascents; s.starSum += c.stars * c.ascents;
+      m.set(c.setter, s);
+    }
+    let out = [...m.values()].map(s => Object.assign(s, { rating: s.ascents ? s.starSum / s.ascents : 0 }));
+    if (by === "rating") out = out.filter(s => s.climbs >= (minClimbs || 5));
+    const key = { rating: s => s.rating, repeats: s => s.ascents, climbs: s => s.climbs }[by] || (s => s.rating);
+    return out.sort((a, b) => key(b) - key(a) || b.ascents - a.ascents);
+  }
+
+  return { search, similar, setters, shuffle, at, frames, gradeName, holdCounts, TAGS, DEFAULT_FOCUS };
 })();
 if (typeof module !== "undefined") module.exports = BLSEARCH;
