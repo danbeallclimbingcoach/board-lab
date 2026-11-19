@@ -10,6 +10,48 @@ const BLSEARCH = (() => {
   // What lists without their own focus (built-in lists) show
   const DEFAULT_FOCUS = { want: ["sloper", "pinch"], avoid: ["crimp"], strict: false };
 
+  // Pull-direction names (layer 1: the hold on the wall, either hand). deg = pull direction,
+  // clockwise from up the wall (0 = undercling, 180 = down pull). Classes by angle from straight
+  // down: 0-22.5 down pull, 45 diagonal down, 67.5-112.5 sideways (one hand's side pull is the
+  // other's gaston), 135 diagonal undercling, 157.5-180 undercling.
+  const ORIENTS = ["down", "diag-down", "side", "diag-up", "under"];
+  const ORIENT_NAME = {down: "down pull", "diag-down": "diagonal down", side: "side pull / gaston",
+                       "diag-up": "diagonal undercling", under: "undercling"};
+  function orientOf(deg) {
+    const off = Math.abs(((deg - 180) % 360 + 540) % 360 - 180);    // 0..180 from straight down
+    return off <= 22.6 ? "down" : off <= 45.1 ? "diag-down" : off <= 112.6 ? "side" : off <= 135.1 ? "diag-up" : "under";
+  }
+  // Per climb: how many hand holds offer each class, and how many offer only that class.
+  // pulls: {placement: [[deg, wallFixed 0/1], ...]} (Dan's tags; null while locked)
+  function orientCounts(row, pulls) {
+    if (!pulls) return null;
+    const c = {hands: 0, has: {}, only: {}};
+    for (const k of ORIENTS) { c.has[k] = 0; c.only[k] = 0; }
+    for (const [pid, role] of frames(row[3])) {
+      if (!HAND.has(role) || !pulls[pid]) continue;
+      const cls = new Set(pulls[pid].map(a => orientOf(a[0])));
+      c.hands++;
+      for (const k of cls) c.has[k]++;
+      if (cls.size === 1) c.only[[...cls][0]]++;
+    }
+    return c;
+  }
+  // want: every wanted class offered by at least one hand hold; avoid: no hand hold whose
+  // directions are all avoided (a hold that also offers another direction doesn't count)
+  function orientOk(row, pulls, p) {
+    const want = p.orientWant || [], avoid = p.orientAvoid || [];
+    if (!want.length && !avoid.length) return true;
+    if (!pulls) throw new Error("Unlock your hold tags to search by pull direction.");
+    const seen = new Set();
+    for (const [pid, role] of frames(row[3])) {
+      if (!HAND.has(role) || !pulls[pid]) continue;
+      const cls = pulls[pid].map(a => orientOf(a[0]));
+      cls.forEach(k => seen.add(k));
+      if (avoid.length && cls.every(k => avoid.includes(k))) return false;
+    }
+    return want.every(k => seen.has(k));
+  }
+
   function frames(fr) { return [...(fr || "").matchAll(/p(\d+)r(\d+)/g)].map(m => [m[1], +m[2]]); }
 
   function gradeRange(grades, vlo, vhi) {
@@ -102,7 +144,8 @@ const BLSEARCH = (() => {
   // p: {angle, vlo, vhi, minAscents, minStars, noClassics, top, setter, match: any|nomatch|match,
   //     exclude: Set of uuids, want: [tags], avoid: [tags], strict, minShare (0-1, of hand holds
   //     with a wanted tag), maxAvoid (null = no limit), sort: best|stars|ascents|shuffle,
-  //     mustUse / mustAvoid: [{pid} | {type}], useMode: all|any}
+  //     mustUse / mustAvoid: [{pid} | {type}], useMode: all|any,
+  //     pulls: {placement: [[deg, wall], ...]} | null, orientWant / orientAvoid: [classes]}
   function search(cat, grades, typeOf, tagsByType, p) {
     const f = { want: p.want || [], avoid: p.avoid || [], strict: !!p.strict };
     const byTags = f.want.length > 0 || f.avoid.length > 0;
@@ -111,14 +154,14 @@ const BLSEARCH = (() => {
     const out = [];
     for (const row of cat) {
       const c = base(row, grades, p, range);
-      if (!c || !picksOk(row, typeOf, p)) continue;
+      if (!c || !picksOk(row, typeOf, p) || !orientOk(row, p.pulls, p)) continue;
       // counts for the search focus; without one, the default focus (for display only)
       const h = holdCounts(row, typeOf, tagsByType, byTags ? f : DEFAULT_FOCUS);
       if (byTags && !h.hands) continue;
       const share = byTags && f.want.length ? h.wanted / h.hands : 0;
       if (f.want.length && share < (p.minShare || 0)) continue;
       if (f.avoid.length && p.maxAvoid != null && h.avoided > p.maxAvoid) continue;
-      out.push(Object.assign(c, { counts: h, share }));
+      out.push(Object.assign(c, { counts: h, share, orient: orientCounts(row, p.pulls) }));
     }
     if (p.sort === "shuffle") return shuffle(out, p.top, p.rand);
     out.sort(SORTS[p.sort] || SORTS.best);
@@ -171,6 +214,7 @@ const BLSEARCH = (() => {
     return out.sort((a, b) => key(b) - key(a) || b.ascents - a.ascents);
   }
 
-  return { search, similar, setters, shuffle, at, frames, gradeName, holdCounts, TAGS, DEFAULT_FOCUS };
+  return { search, similar, setters, shuffle, at, frames, gradeName, holdCounts, TAGS, DEFAULT_FOCUS,
+           ORIENTS, ORIENT_NAME, orientOf, orientCounts, orientOk };
 })();
 if (typeof module !== "undefined") module.exports = BLSEARCH;

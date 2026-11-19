@@ -140,6 +140,10 @@ button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visi
       <div class="chips" id="chips"></div>
       <div class="small" id="chipNote" hidden>Unlock your hold tags (bottom of this box) to use these.</div>
     </div>
+    <div class="wide holds">
+      <div class="small">Pull direction · tap: OK → <b>✓ Want</b> (at least one hand hold) → <b>✕ Avoid</b> (no hand hold that only pulls that way)</div>
+      <div class="chips" id="ochips"></div>
+    </div>
     <label id="shareWrap">Want at least
       <select id="sShare"><option value="0">any share</option><option value="0.25">25%</option><option value="0.4">40%</option><option value="0.5">50%</option><option value="0.6" selected>60%</option><option value="0.75">75%</option><option value="1">100%</option></select>
     </label>
@@ -288,6 +292,48 @@ const BLSEARCH = (() => {
   // What lists without their own focus (built-in lists) show
   const DEFAULT_FOCUS = { want: ["sloper", "pinch"], avoid: ["crimp"], strict: false };
 
+  // Pull-direction names (layer 1: the hold on the wall, either hand). deg = pull direction,
+  // clockwise from up the wall (0 = undercling, 180 = down pull). Classes by angle from straight
+  // down: 0-22.5 down pull, 45 diagonal down, 67.5-112.5 sideways (one hand's side pull is the
+  // other's gaston), 135 diagonal undercling, 157.5-180 undercling.
+  const ORIENTS = ["down", "diag-down", "side", "diag-up", "under"];
+  const ORIENT_NAME = {down: "down pull", "diag-down": "diagonal down", side: "side pull / gaston",
+                       "diag-up": "diagonal undercling", under: "undercling"};
+  function orientOf(deg) {
+    const off = Math.abs(((deg - 180) % 360 + 540) % 360 - 180);    // 0..180 from straight down
+    return off <= 22.6 ? "down" : off <= 45.1 ? "diag-down" : off <= 112.6 ? "side" : off <= 135.1 ? "diag-up" : "under";
+  }
+  // Per climb: how many hand holds offer each class, and how many offer only that class.
+  // pulls: {placement: [[deg, wallFixed 0/1], ...]} (Dan's tags; null while locked)
+  function orientCounts(row, pulls) {
+    if (!pulls) return null;
+    const c = {hands: 0, has: {}, only: {}};
+    for (const k of ORIENTS) { c.has[k] = 0; c.only[k] = 0; }
+    for (const [pid, role] of frames(row[3])) {
+      if (!HAND.has(role) || !pulls[pid]) continue;
+      const cls = new Set(pulls[pid].map(a => orientOf(a[0])));
+      c.hands++;
+      for (const k of cls) c.has[k]++;
+      if (cls.size === 1) c.only[[...cls][0]]++;
+    }
+    return c;
+  }
+  // want: every wanted class offered by at least one hand hold; avoid: no hand hold whose
+  // directions are all avoided (a hold that also offers another direction doesn't count)
+  function orientOk(row, pulls, p) {
+    const want = p.orientWant || [], avoid = p.orientAvoid || [];
+    if (!want.length && !avoid.length) return true;
+    if (!pulls) throw new Error("Unlock your hold tags to search by pull direction.");
+    const seen = new Set();
+    for (const [pid, role] of frames(row[3])) {
+      if (!HAND.has(role) || !pulls[pid]) continue;
+      const cls = pulls[pid].map(a => orientOf(a[0]));
+      cls.forEach(k => seen.add(k));
+      if (avoid.length && cls.every(k => avoid.includes(k))) return false;
+    }
+    return want.every(k => seen.has(k));
+  }
+
   function frames(fr) { return [...(fr || "").matchAll(/p(\d+)r(\d+)/g)].map(m => [m[1], +m[2]]); }
 
   function gradeRange(grades, vlo, vhi) {
@@ -380,7 +426,8 @@ const BLSEARCH = (() => {
   // p: {angle, vlo, vhi, minAscents, minStars, noClassics, top, setter, match: any|nomatch|match,
   //     exclude: Set of uuids, want: [tags], avoid: [tags], strict, minShare (0-1, of hand holds
   //     with a wanted tag), maxAvoid (null = no limit), sort: best|stars|ascents|shuffle,
-  //     mustUse / mustAvoid: [{pid} | {type}], useMode: all|any}
+  //     mustUse / mustAvoid: [{pid} | {type}], useMode: all|any,
+  //     pulls: {placement: [[deg, wall], ...]} | null, orientWant / orientAvoid: [classes]}
   function search(cat, grades, typeOf, tagsByType, p) {
     const f = { want: p.want || [], avoid: p.avoid || [], strict: !!p.strict };
     const byTags = f.want.length > 0 || f.avoid.length > 0;
@@ -389,14 +436,14 @@ const BLSEARCH = (() => {
     const out = [];
     for (const row of cat) {
       const c = base(row, grades, p, range);
-      if (!c || !picksOk(row, typeOf, p)) continue;
+      if (!c || !picksOk(row, typeOf, p) || !orientOk(row, p.pulls, p)) continue;
       // counts for the search focus; without one, the default focus (for display only)
       const h = holdCounts(row, typeOf, tagsByType, byTags ? f : DEFAULT_FOCUS);
       if (byTags && !h.hands) continue;
       const share = byTags && f.want.length ? h.wanted / h.hands : 0;
       if (f.want.length && share < (p.minShare || 0)) continue;
       if (f.avoid.length && p.maxAvoid != null && h.avoided > p.maxAvoid) continue;
-      out.push(Object.assign(c, { counts: h, share }));
+      out.push(Object.assign(c, { counts: h, share, orient: orientCounts(row, p.pulls) }));
     }
     if (p.sort === "shuffle") return shuffle(out, p.top, p.rand);
     out.sort(SORTS[p.sort] || SORTS.best);
@@ -449,7 +496,8 @@ const BLSEARCH = (() => {
     return out.sort((a, b) => key(b) - key(a) || b.ascents - a.ascents);
   }
 
-  return { search, similar, setters, shuffle, at, frames, gradeName, holdCounts, TAGS, DEFAULT_FOCUS };
+  return { search, similar, setters, shuffle, at, frames, gradeName, holdCounts, TAGS, DEFAULT_FOCUS,
+           ORIENTS, ORIENT_NAME, orientOf, orientCounts, orientOk };
 })();
 if (typeof module !== "undefined") module.exports = BLSEARCH;
 
@@ -510,14 +558,17 @@ async function resolve(list){
   const idx = catIndex[list.board];
   list.climbs = list.uuids.map(u => idx.get(u)).filter(Boolean).map(row => {
     const c = BLSEARCH.at(row, list.angle, DATA.grades);
-    if (c){ c.counts = BLSEARCH.holdCounts(row, DATA.types[list.board], tags && tags.types, list.focus); c.noMatch = !!row[5]; }
+    if (c){ c.counts = BLSEARCH.holdCounts(row, DATA.types[list.board], tags && tags.types, list.focus); c.noMatch = !!row[5];
+            c.orient = BLSEARCH.orientCounts(row, pullsOf(list.board)); }
     return c;
   }).filter(Boolean);
 }
 function refreshCounts(){
   for (const l of LISTS){ if (!l.climbs) continue;
     const idx = catIndex[l.board]; if (!idx) continue;
-    for (const c of l.climbs){ const row = idx.get(c.uuid); if (row) c.counts = BLSEARCH.holdCounts(row, DATA.types[l.board], tags && tags.types, l.focus); }
+    for (const c of l.climbs){ const row = idx.get(c.uuid); if (!row) continue;
+      c.counts = BLSEARCH.holdCounts(row, DATA.types[l.board], tags && tags.types, l.focus);
+      c.orient = BLSEARCH.orientCounts(row, pullsOf(l.board)); }
   }
 }
 
@@ -537,6 +588,13 @@ function meta(c, focus){
   if (h && h.hands){
     if (f.want.length) s += ` · want ${h.wanted}/${h.hands} ${f.want.join("/")}`;
     if (f.avoid.length) s += ` · avoid ${h.avoided} ${f.avoid.join("/")}${h.mixed?` (+${h.mixed} mixed)`:""}`;
+  }
+  // hand holds offering each pull direction (a hold can offer several)
+  const o = c.orient;
+  if (o && o.hands){
+    const SHORT = {down:"down", "diag-down":"diag down", side:"side/gaston", "diag-up":"diag under", under:"under"};
+    const parts = BLSEARCH.ORIENTS.filter(k => o.has[k]).map(k => `${o.has[k]} ${SHORT[k]}`);
+    if (parts.length) s += ` · pulls: ${parts.join(", ")}`;
   }
   return s;
 }
@@ -645,6 +703,7 @@ function fillSearchForm(){
     $("sStars").value = last.minStars; $("sNoClassics").checked = last.noClassics; $("sTop").value = last.top;
     if (last.want){               // current format
       chipState = {}; for (const t of last.want) chipState[t] = "want"; for (const t of last.avoid) chipState[t] = "avoid";
+      ochipState = {}; for (const k of last.orientWant || []) ochipState[k] = "want"; for (const k of last.orientAvoid || []) ochipState[k] = "avoid";
       $("sShare").value = last.minShare; $("sMax").value = last.maxAvoid == null ? -1 : last.maxAvoid;
       $("sStrict").checked = !!last.strict; $("sSort").value = last.sort || "best";
     } else applyPreset(last.mode === "low-crimp" || last.mode === "sloper-pinch" ? last.mode : "clear");
@@ -668,6 +727,15 @@ function applyPreset(name){
   renderChips();
 }
 const chipsOf = (s) => BLSEARCH.TAGS.filter(t => chipState[t] === s);
+// pull-direction chips (same OK -> want -> avoid cycle)
+let ochipState = {};
+const ochipsOf = (s) => BLSEARCH.ORIENTS.filter(k => ochipState[k] === s);
+function renderOChips(){
+  $("ochips").innerHTML = BLSEARCH.ORIENTS.map(k => {
+    const s = ochipState[k] || "ok";
+    return `<button type="button" class="chip" data-o="${k}" data-s="${s}" aria-label="${BLSEARCH.ORIENT_NAME[k]}: ${s}"${tags && tags.pull ? "" : " disabled"}>${s==="want"?"✓ ":s==="avoid"?"✕ ":""}${BLSEARCH.ORIENT_NAME[k]}</button>`;
+  }).join("");
+}
 function renderChips(){
   $("chips").innerHTML = BLSEARCH.TAGS.map(t => {
     const s = chipState[t] || "ok";
@@ -675,6 +743,7 @@ function renderChips(){
   }).join("");
   for (const b of $("presets").querySelectorAll("button")) b.disabled = !tags && b.dataset.preset !== "clear";
   $("chipNote").hidden = !!tags;
+  renderOChips();
   $("shareWrap").hidden = !chipsOf("want").length;
   $("maxWrap").hidden = $("strictWrap").hidden = !chipsOf("avoid").length;
 }
@@ -780,9 +849,13 @@ function focusTitle(p){
   if (w) parts.push(`uses ${w > 1 && p.useMode === "any" ? "any of " : ""}${w} pick${w>1?"s":""}`);
   if (wo) parts.push(`avoids ${wo} pick${wo>1?"s":""}`);
   if (p.match !== "any") parts.push(p.match === "nomatch" ? "no match" : "match OK");
+  const ON = BLSEARCH.ORIENT_NAME;
+  if ((p.orientWant||[]).length) parts.push("with " + p.orientWant.map(k => ON[k]).join(" + "));
+  if ((p.orientAvoid||[]).length) parts.push("no " + p.orientAvoid.map(k => ON[k]).join("/"));
   if (p.hideSent || p.hideTried || p.hideLit) parts.push("new to me");
   return parts.length ? " · " + parts.join(", ") : "";
 }
+const pullsOf = (board) => tags && tags.pull ? tags.pull[board] : null;
 // shared by search, similar and setter ranking
 function formParams(board){
   const max = +$("sMax").value;
@@ -792,7 +865,8 @@ function formParams(board){
              minShare:+$("sShare").value, maxAvoid: max < 0 ? null : max, sort:$("sSort").value,
              match:$("sMatch").value, setter:$("sSetter").value.trim(), useMode:$("sUseMode").value,
              hideSent:$("hSent").checked, hideTried:$("hTried").checked, hideLit:$("hLit").checked,
-             mustUse:pickItems(board, "with"), mustAvoid:pickItems(board, "without")};
+             mustUse:pickItems(board, "with"), mustAvoid:pickItems(board, "without"),
+             orientWant:ochipsOf("want"), orientAvoid:ochipsOf("avoid"), pulls:pullsOf(board)};
   if (+p.vhi.slice(1) < +p.vlo.slice(1)) [p.vlo, p.vhi] = [p.vhi, p.vlo];
   return p;
 }
@@ -807,7 +881,7 @@ function showResults(board, angle, title, res, focus){
 async function runSearch(ev){
   ev.preventDefault();
   const board = $("layout").value, p = formParams(board);
-  store.set("bl.search", JSON.stringify(Object.assign({}, p, {mustUse:undefined, mustAvoid:undefined})));
+  store.set("bl.search", JSON.stringify(Object.assign({}, p, {mustUse:undefined, mustAvoid:undefined, pulls:undefined})));
   p.exclude = hiddenSet();
   $("searchBtn").disabled = true; $("searchBtn").textContent = "Searching…";
   try {
@@ -834,7 +908,8 @@ async function findSimilar(){
              minStars:fp.minStars, match:fp.match, exclude:hiddenSet(), top:Math.min(fp.top, 40)};
   if (i < 0){ p.vlo = vs[0]; p.vhi = vs[vs.length-1]; }
   const res = BLSEARCH.similar(catalogues[l.board], DATA.grades, DATA.types[l.board], DATA.holds[l.board], row, p);
-  for (const r of res) r.counts = BLSEARCH.holdCounts(catIndex[l.board].get(r.uuid), DATA.types[l.board], tags && tags.types);
+  for (const r of res){ const rw = catIndex[l.board].get(r.uuid);
+    r.counts = BLSEARCH.holdCounts(rw, DATA.types[l.board], tags && tags.types); r.orient = BLSEARCH.orientCounts(rw, pullsOf(l.board)); }
   await showResults(l.board, l.angle, `≈ Like ${c.name} · ${BOARD_NAME[l.board]} ${l.angle}° ${p.vlo}–${p.vhi}`, res);
   setStatus(`${res.length} similar climb${res.length===1?"":"s"}, closest holds first.`, "ok");
 }
@@ -959,6 +1034,8 @@ $("list").addEventListener("click", e=>{ const b=e.target.closest(".climb"); if 
 $("listSel").onchange = ()=>showList(+$("listSel").value);
 $("layout").onchange = ()=>{ store.set("bl.layout",$("layout").value); renderList(); renderCur(); renderPickSum(); $("setterOut").innerHTML = ""; catalogue($("layout").value).then(fillSetters).catch(()=>{}); };
 $("searchForm").addEventListener("submit", runSearch);
+$("ochips").addEventListener("click", e=>{ const b=e.target.closest(".chip"); if (!b) return;
+  const k=b.dataset.o; ochipState[k] = {undefined:"want", want:"avoid", avoid:undefined}[ochipState[k]]; if (!ochipState[k]) delete ochipState[k]; renderOChips(); });
 $("chips").addEventListener("click", e=>{ const b=e.target.closest(".chip"); if (!b) return;
   const t=b.dataset.tag; chipState[t] = {undefined:"want", want:"avoid", avoid:undefined}[chipState[t]]; if (!chipState[t]) delete chipState[t]; renderChips(); });
 $("presets").addEventListener("click", e=>{ const b=e.target.closest("[data-preset]"); if (b) applyPreset(b.dataset.preset); });
