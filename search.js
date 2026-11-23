@@ -3,9 +3,11 @@
 // Catalogue rows: [uuid, name, setter, frames, [[angle, difficulty, ascents, quality(1-5), benchmark], ...]]
 const BLSEARCH = (() => {
   const HAND = new Set([5, 6, 7]);
-  const TAGS = ["jug", "ledge", "crimp", "sloper", "pinch", "pocket"];
+  // Hold-type chips. "pocket" isn't offered (Dan, 2026-11-22): the one pocket hold is also tagged
+  // crimp, so it counts as a crimp.
+  const TAGS = ["jug", "ledge", "crimp", "sloper", "pinch"];
   // Non-strict avoid: a hold with an avoided tag is only "mixed" if it also has one of these
-  // (not avoided). Pocket doesn't count: a crimpy pocket is still a crimp.
+  // (not avoided).
   const SOFTENERS = ["jug", "ledge", "crimp", "sloper", "pinch"];
   // What lists without their own focus (built-in lists) show
   const DEFAULT_FOCUS = { want: ["sloper", "pinch"], avoid: ["crimp"], strict: false };
@@ -130,11 +132,12 @@ const BLSEARCH = (() => {
     return c;
   }
 
-  // Hold picks: each item is {pid} (that spot) or {type} (any placement of that hold type), any role.
+  // Hold picks: each item is {pid} (that spot) or {type} (any placement of that hold type).
+  // Only hand holds (start, hand, finish) count: a foot on a picked hold neither uses nor breaks it.
   function picksOk(row, typeOf, p) {
     const use = p.mustUse || [], avoid = p.mustAvoid || [];
     if (!use.length && !avoid.length) return true;
-    const pids = new Set(frames(row[3]).map(x => x[0])), types = new Set([...pids].map(pid => typeOf[pid]));
+    const pids = new Set(frames(row[3]).filter(x => HAND.has(x[1])).map(x => x[0])), types = new Set([...pids].map(pid => typeOf[pid]));
     const hit = (it) => it.pid ? pids.has(it.pid) : types.has(it.type);
     if (avoid.some(hit)) return false;
     if (!use.length) return true;
